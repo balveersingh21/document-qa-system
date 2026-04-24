@@ -78,7 +78,16 @@ def search(question, index, chunks, k=3):
 
     results = [chunks[i] for i in indices[0]]
     return results
+    
+def extract_best_sentence(question, chunk):
+    sentences = chunk.split(".")
+    q_emb = model.encode([question])
+    s_emb = model.encode(sentences)
 
+    sims = cosine_similarity(q_emb, s_emb)[0]
+    best_idx = sims.argmax()
+
+    return sentences[best_idx].strip()
 
 # FILE UPLOAD
 
@@ -119,12 +128,12 @@ if question and uploaded_file:
     chunks = st.session_state.chunks
     index = st.session_state.index
 
-    results = search(question, index, chunks, k=3)
+    results = search(question, index, chunks, k=1)
 
     if not results:
-        answer = "Answer not found in document."
+        answer = "❌ Answer not found in document."
     else:
-        answer = " ".join(results)
+        answer = extract_best_sentence(question, results[0])
 
     with st.chat_message("assistant"):
         st.write(answer)
