@@ -1,7 +1,8 @@
-streamlit
+streamlit==1.32.0
 sentence-transformers==2.2.2
 transformers==4.36.2
-faiss-cpu
-numpy
+huggingface-hub==0.14.1
+faiss-cpu==1.7.4
+numpy==1.26.4
 PyPDF2
-torch
+torch==2.1.2
