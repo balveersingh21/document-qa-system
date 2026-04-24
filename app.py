@@ -1,23 +1,22 @@
 import streamlit as st
 import PyPDF2
 import re
-import os
-import google.generativeai as genai
+import numpy as np
+import faiss
 from sentence_transformers import SentenceTransformer
-from sklearn.metrics.pairwise import cosine_similarity
 
-st.set_page_config(page_title="Document Q&A AI", layout="wide")
-st.title("📄 Document Q&A AI (Gemini Powered)")
+st.set_page_config(page_title="Document Q&A (FAISS)", layout="wide")
+st.title("Document Q&A AI")
 
-genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-
+# LOAD MODEL
 @st.cache_resource
-def load_models():
-    embed_model = SentenceTransformer("all-MiniLM-L6-v2")
-    gemini_model = genai.GenerativeModel("gemini-pro")
-    return embed_model, gemini_model
+def load_model():
+    return SentenceTransformer("all-MiniLM-L6-v2")
 
-embed_model, gemini_model = load_models()
+model = load_model()
+
+
+# SESSION STATE
 
 if "history" not in st.session_state:
     st.session_state.history = []
@@ -25,50 +24,84 @@ if "history" not in st.session_state:
 if "processed" not in st.session_state:
     st.session_state.processed = False
 
+
+# EXTRACT TEXT
+
 def extract_text(file):
     if file.name.endswith(".txt"):
         return file.read().decode("utf-8")
     elif file.name.endswith(".pdf"):
-        pdf_reader = PyPDF2.PdfReader(file)
+        reader = PyPDF2.PdfReader(file)
         text = ""
-        for page in pdf_reader.pages:
+        for page in reader.pages:
             if page.extract_text():
                 text += page.extract_text()
         return text
+
+
+# CLEAN TEXT
 
 def clean_text(text):
     text = text.lower()
     text = re.sub(r"\s+", " ", text)
     return text
 
-def split_text(text, chunk_size=200):
+
+# SPLIT TEXT
+
+def split_text(text, chunk_size=150):
     words = text.split()
     return [" ".join(words[i:i+chunk_size]) for i in range(0, len(words), chunk_size)]
 
+
+# BUILD FAISS INDEX
+
 @st.cache_data
-def get_embeddings(chunks):
-    return embed_model.encode(chunks)
+def build_faiss(chunks):
+    embeddings = model.encode(chunks)
+    embeddings = np.array(embeddings).astype("float32")
 
-def get_relevant_chunks(question, chunks, embeddings, top_k=5):
-    q_emb = embed_model.encode([question])
-    sims = cosine_similarity(q_emb, embeddings)[0]
-    top_idx = sims.argsort()[-top_k:][::-1]
-    return [chunks[i] for i in top_idx]
+    dim = embeddings.shape[1]
+    index = faiss.IndexFlatL2(dim)
+    index.add(embeddings)
 
-uploaded_file = st.file_uploader("Upload a TXT or PDF file", type=["txt", "pdf"])
+    return index, embeddings
+
+
+# SEARCH
+
+def search(question, index, chunks, k=3):
+    q_emb = model.encode([question])
+    q_emb = np.array(q_emb).astype("float32")
+
+    distances, indices = index.search(q_emb, k)
+
+    results = [chunks[i] for i in indices[0]]
+    return results
+
+
+# FILE UPLOAD
+
+uploaded_file = st.file_uploader("Upload TXT or PDF", type=["txt", "pdf"])
 
 if uploaded_file and not st.session_state.processed:
     with st.spinner("Processing document..."):
         text = extract_text(uploaded_file)
         text = clean_text(text)
-        chunks = split_text(text)
-        embeddings = get_embeddings(chunks)
-        st.session_state.chunks = chunks
-        st.session_state.embeddings = embeddings
-        st.session_state.processed = True
-    st.success(f"✅ Document processed into {len(chunks)} chunks!")
 
-st.subheader("💬 Ask Questions")
+        chunks = split_text(text)
+        index, embeddings = build_faiss(chunks)
+
+        st.session_state.chunks = chunks
+        st.session_state.index = index
+        st.session_state.processed = True
+
+    st.success(f"Processed {len(chunks)} chunks")
+
+
+# CHAT UI
+
+st.subheader("Ask Questions")
 
 for q, a in st.session_state.history:
     with st.chat_message("user"):
@@ -76,43 +109,30 @@ for q, a in st.session_state.history:
     with st.chat_message("assistant"):
         st.write(a)
 
-question = st.chat_input("Ask something from your document...")
+question = st.chat_input("Ask your question...")
+# ANSWER
 
 if question and uploaded_file:
     with st.chat_message("user"):
         st.write(question)
 
     chunks = st.session_state.chunks
-    embeddings = st.session_state.embeddings
+    index = st.session_state.index
 
-    context_chunks = get_relevant_chunks(question, chunks, embeddings)
-    context = " ".join(context_chunks)
+    results = search(question, index, chunks, k=3)
 
-    with st.spinner("Thinking..."):
-        prompt = f"""
-You are a helpful AI assistant.
-
-Answer the question based on the context below.
-
-Context:
-{context}
-
-Question: {question}
-
-Answer clearly:
-"""
-
-        response = gemini_model.generate_content(prompt)
-        answer = response.text.strip()
-
-    if not answer:
-        answer = "I couldn't find a clear answer in the document."
+    if not results:
+        answer = "Answer not found in document."
+    else:
+        answer = " ".join(results)
 
     with st.chat_message("assistant"):
         st.write(answer)
 
     st.session_state.history.append((question, answer))
 
+
+# CLEAR CHAT
 if st.button("Clear Chat"):
     st.session_state.history = []
     st.session_state.processed = False
