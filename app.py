@@ -14,7 +14,7 @@ genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
 @st.cache_resource
 def load_models():
     embed_model = SentenceTransformer("all-MiniLM-L6-v2")
-    gemini_model = genai.GenerativeModel("gemini-1.5-flash")
+    gemini_model = genai.GenerativeModel("gemini-pro")
     return embed_model, gemini_model
 
 embed_model, gemini_model = load_models()
