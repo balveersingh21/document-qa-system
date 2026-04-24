@@ -4,3 +4,5 @@ faiss-cpu
 numpy
 PyPDF2
 torch
+torchvision
+scikit-learn
