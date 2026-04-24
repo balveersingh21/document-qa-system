@@ -4,6 +4,7 @@ import re
 import numpy as np
 import faiss
 from sentence_transformers import SentenceTransformer
+from sklearn.metrics.pairwise import cosine_similarity
 
 st.set_page_config(page_title="Document Q&A (FAISS)", layout="wide")
 st.title("Document Q&A AI")
@@ -80,14 +81,15 @@ def search(question, index, chunks, k=3):
     return results
     
 def extract_best_sentence(question, chunk):
-    sentences = chunk.split(".")
+    sentences = [s.strip() for s in chunk.split(".") if s.strip()]
+
     q_emb = model.encode([question])
     s_emb = model.encode(sentences)
 
     sims = cosine_similarity(q_emb, s_emb)[0]
     best_idx = sims.argmax()
 
-    return sentences[best_idx].strip()
+    return sentences[best_idx]
 
 # FILE UPLOAD
 
