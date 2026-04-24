@@ -1,8 +1,5 @@
 streamlit
-PyPDF2
-transformers
 sentence-transformers
-scikit-learn
-torch
-torchvision
-google-generativeai
+faiss-cpu
+numpy
+PyPDF2
